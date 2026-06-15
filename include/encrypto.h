@@ -35,4 +35,4 @@ bool decryptText(Algorithm algorithm,
 // Генератор ключей в виде HEX-строки
 std::string generateKeyHex(Algorithm algorithm);
 
-} // namespace crypto
+} 

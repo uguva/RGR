@@ -32,4 +32,4 @@ std::vector<uint8_t> deriveKey(const std::string& password,
 
 void xorBuffer(uint8_t* left, const uint8_t* right, std::size_t len);
 
-} // namespace crypto
+}
