@@ -166,7 +166,7 @@ void save_output_data(const vector<uint8_t>& data, bool is_encrypt) {
         file.write(reinterpret_cast<const char*>(data.data()), data.size());
         file.close(); // Явно закрываем поток
         
-        cout << ">>> Успешно! Двоичный файл сохранен: " << path << endl;
+        cout << ">>> Успешно! Файл сохранен: " << path << endl;
     } else {
         cout << "\n>>> Результат:\n" << string(data.begin(), data.end()) << "\n" << endl;
     }
