@@ -219,62 +219,67 @@ void process_crypto(LoadedModule* mod, bool is_encrypt) {
 }
 
 void process_keygen(LoadedModule* mod) {
-    try {
-        string params;
-        if (mod->name == "RSA") {
-            cout << "Введите два простых числа через пробел (p q) [или 0 для отмены]: ";
+    if (!mod) return;
+
+    string algo_name = mod->name;
+    string params = "";
+
+    // 1. Интеллектуальный пропуск ввода для симметричных шифров
+    if (algo_name == "AES" || algo_name == "DES" || algo_name == "Affine") {
+        params = "auto"; // Фиктивный параметр для прохождения проверок
+    } else {
+        // Для RSA, DH и Vernam запрашиваем реальные данные
+        if (algo_name == "Vernam") {
+            cout << "Введите длину ключа (число) [или 0 для отмены]: ";
         } else if (mod->name == "DiffieHellman") {
             cout << "Введите генератор, простое число и секретный ключ (g p a) через пробел [или 0 для отмены]: ";
-        } else if (mod->name == "AES") {
-            cout << "Введите строку [или 0 для отмены]: ";
-        } else if (mod->name == "DES") {
-            cout << "Введите строку [или 0 для отмены]: ";
-        } else if (mod->name == "Affine") {
-            cout << "Введите строку [или 0 для отмены]: ";
         } else {
-            cout << "Введите число [или 0 для отмены]: ";
+            cout << "Введите два простых числа через пробел (p q) [или 0 для отмены]: ";
         }
-
+        
         getline(cin, params);
-        if (params == "0") throw CancelOperation();
-        
-        char buffer[1024] = {0};
-        size_t written = 0;
-        
-        CryptoStatus status = mod->generate_keys(params.c_str(), buffer, sizeof(buffer), &written);
-        if (status == CryptoStatus::Success) {
-            cout << "\n>>> Ключи успешно сгенерированы!\n";
-            
-            cout << "\nКак поступить со сгенерированными ключами?\n"
-                 << "1. Вывести результаты в консоль\n"
-                 << "2. Сохранить результаты в файл\n"
-                 << "0. Отменить и выйти в меню\n";
-            
-            int save_choice = get_choice<int>(0, 2);
-            if (save_choice == 0) throw CancelOperation();
-            
-            if (save_choice == 1) {
-                cout << "\n>>> Данные вашего ключа:\n" << buffer << endl;
-            } else {
-                cout << "Введите путь для сохранения ключа: ";
-                string path; 
-                getline(cin, path);
-                if (path == "0") throw CancelOperation();
-                
-                ofstream file(path, ios::binary);
-                if (!file.is_open()) throw runtime_error("Не удалось создать файл ключа.");
-                file.write(buffer, written);
-                cout << ">>> Ключ успешно сохранен в файл: " << path << endl;
-            }
-        } else if (status == CryptoStatus::InvalidParam) {
-            throw runtime_error("Неверные параметры. Проверьте простоту чисел / формат ввода чисел.");
-        } else {
-            throw runtime_error("Внутренняя ошибка генерации.");
+        if (params == "0") {
+            cout << "Операция отменена." << endl;
+            return;
         }
-    } catch (const CancelOperation& e) {
-        cout << "\n[" << e.what() << " Возврат в меню...]\n" << endl;
-    } catch (const exception& e) {
-        cerr << "\n[ОШИБКА]: " << e.what() << "\n" << endl;
+    }
+
+    // 2. Буфер и вызов функции генерации из DLL/SO
+    vector<char> buffer(4096, 0);
+    size_t written = 0;
+    CryptoStatus status = mod->generate_keys(params.c_str(), buffer.data(), buffer.size(), &written);
+
+    if (status != CryptoStatus::Success) {
+        cout << "[ОШИБКА]: Сбой генерации ключа. Код: " << static_cast<int>(status) << endl;
+        return;
+    }
+
+    string key_str(buffer.data(), written);
+    cout << "\n>>> Ключи успешно сгенерированы!\n" << endl;
+
+    // 3. Выбор способа сохранения
+    cout << "Как поступить со сгенерированными ключами?\n";
+    cout << "1. Вывести результаты в консоль\n";
+    cout << "2. Сохранить результаты в файл\n";
+    cout << "0. Отменить и выйти в меню\n";
+    cout << "Выбор: ";
+    
+    int choice = get_choice<int>(0, 2);
+    
+    if (choice == 1) {
+        cout << "\n>>> Данные вашего ключа:\n" << key_str << "\n" << endl;
+    } else if (choice == 2) {
+        cout << "Введите имя файла для сохранения: ";
+        string filepath;
+        getline(cin, filepath);
+        
+        std::ofstream out(filepath, std::ios::binary);
+        if (out.is_open()) {
+            out.write(key_str.c_str(), key_str.size());
+            cout << "[*] Ключи успешно сохранены в файл: " << filepath << endl;
+        } else {
+            cout << "[ОШИБКА]: Не удалось записать данные в файл." << endl;
+        }
     }
 }
 
