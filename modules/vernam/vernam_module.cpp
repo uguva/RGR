@@ -20,19 +20,33 @@ extern "C" {
     }
 
     CryptoStatus generate_keys(const char* params, char* out_buffer, size_t max_size, size_t* written) {
-        // Ожидаем, что в параметрах передадут желаемую длину ключа
+        if (!params || strlen(params) == 0) {
+            return CryptoStatus::InvalidParam;
+        }
+
+        for (size_t i = 0; params[i] != '\0'; ++i) {
+            // Пропускаем пробелы в начале или конце
+            if (isspace(static_cast<unsigned char>(params[i]))) {
+                continue;
+            }
+            if (!isdigit(static_cast<unsigned char>(params[i]))) {
+                return CryptoStatus::InvalidParam; // Найдена буква или спецсимвол -> ошибка!
+            }
+        }
+
         int length = 0;
         if (sscanf(params, "%d", &length) != 1 || length <= 0) {
             return CryptoStatus::InvalidParam;
         }
 
-        if (static_cast<size_t>(length) >= max_size) return CryptoStatus::BufferTooSmall;
+        if (static_cast<size_t>(length) >= max_size) {
+            return CryptoStatus::BufferTooSmall;
+        }
 
         srand(static_cast<unsigned>(time(nullptr)));
         string res = "";
         for (int i = 0; i < length; i++) {
-            // Генерируем читаемые ASCII символы (от 33 '!' до 126 '~') 
-            // Это безопасно для консольного вывода и сохранения в текстовые файлы
+            // Читаемые ASCII символы
             res += static_cast<char>((rand() % 94) + 33);
         }
 
@@ -42,7 +56,6 @@ extern "C" {
     }
 
     CryptoStatus encrypt(ConstBuffer input, ConstBuffer key, MutBuffer output) {
-        // Академическое правило шифра Вернама: ключ должен быть >= длины сообщения
         if (key.size < input.size) return CryptoStatus::InvalidParam;
         if (output.size < input.size) return CryptoStatus::BufferTooSmall;
 
@@ -53,7 +66,7 @@ extern "C" {
     }
 
     CryptoStatus decrypt(ConstBuffer input, ConstBuffer key, MutBuffer output) {
-        // Дешифрование в Вернаме абсолютно идентично шифрованию (XOR)
+        // Дешифрование (XOR)
         return encrypt(input, key, output);
     }
 }
