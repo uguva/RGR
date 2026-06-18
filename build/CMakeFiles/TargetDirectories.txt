@@ -1,0 +1,5 @@
+C:/Users/malyg/Downloads/VS CODE )))/MY-CREATION/build/CMakeFiles/rsa.dir
+C:/Users/malyg/Downloads/VS CODE )))/MY-CREATION/build/CMakeFiles/dh.dir
+C:/Users/malyg/Downloads/VS CODE )))/MY-CREATION/build/CMakeFiles/crypto_app.dir
+C:/Users/malyg/Downloads/VS CODE )))/MY-CREATION/build/CMakeFiles/edit_cache.dir
+C:/Users/malyg/Downloads/VS CODE )))/MY-CREATION/build/CMakeFiles/rebuild_cache.dir

@@ -1,28 +1,8 @@
 #include "crypto_interface.h"
-#include <cstdio>
+#include <gmp.h>
 #include <string>
+#include <sstream>
 #include <cstring>
-
-bool is_prime(uint64_t n) {
-    if (n <= 1) return false;
-    if (n <= 3) return true;
-    if (n % 2 == 0 || n % 3 == 0) return false;
-    for (uint64_t i = 5; i * i <= n; i += 6) {
-        if (n % i == 0 || n % (i + 2) == 0) return false;
-    }
-    return true;
-}
-
-uint64_t power_mod(uint64_t base, uint64_t exp, uint64_t mod) {
-    uint64_t res = 1;
-    base %= mod;
-    while (exp > 0) {
-        if (exp % 2 == 1) res = (static_cast<__uint128_t>(res) * base) % mod;
-        base = (static_cast<__uint128_t>(base) * base) % mod;
-        exp >>= 1;
-    }
-    return res;
-}
 
 extern "C" {
     const AlgorithmInfo* get_algorithm_info() {
@@ -37,11 +17,26 @@ extern "C" {
     }
 
     CryptoStatus generate_keys(const char* params, char* out_buffer, size_t max_size, size_t* written) {
-        uint64_t g, p, a;
-        if (sscanf(params, "%lu %lu %lu", &g, &p, &a) != 3) return CryptoStatus::InvalidParam;
-        if (!is_prime(p)) return CryptoStatus::InvalidParam;
-        uint64_t A = power_mod(g, a, p);
-        std::string res = std::to_string(A);
+        std::istringstream iss(params);
+        std::string g_s, p_s, a_s;
+        if (!(iss >> g_s >> p_s >> a_s)) return CryptoStatus::InvalidParam;
+
+        mpz_t g, p, a, A;
+        mpz_inits(g, p, a, A, NULL);
+        
+        if (mpz_set_str(g, g_s.c_str(), 10) != 0 || mpz_set_str(p, p_s.c_str(), 10) != 0 || mpz_set_str(a, a_s.c_str(), 10) != 0) {
+            return CryptoStatus::InvalidParam;
+        }
+        if (mpz_probab_prime_p(p, 25) == 0) return CryptoStatus::InvalidParam;
+
+        mpz_powm(A, g, a, p);
+
+        char A_buf[1024];
+        mpz_get_str(A_buf, 10, A);
+        std::string res(A_buf);
+        
+        mpz_clears(g, p, a, A, NULL);
+
         if (res.size() >= max_size) return CryptoStatus::BufferTooSmall;
         strcpy(out_buffer, res.c_str());
         *written = res.size();
@@ -50,14 +45,24 @@ extern "C" {
 
     CryptoStatus encrypt(ConstBuffer input, ConstBuffer key, MutBuffer output) {
         std::string k(reinterpret_cast<const char*>(key.data), key.size);
-        uint64_t p = 0, g = 0, priv = 0, pub_enemy = 0;
+        std::istringstream iss(k);
+        std::string p_s, g_s, priv_s, pub_enemy_s;
+        
+        if (!(iss >> p_s >> g_s >> priv_s >> pub_enemy_s)) return CryptoStatus::InvalidParam;
 
-        if (sscanf(k.c_str(), "%lu %lu %lu %lu", &p, &g, &priv, &pub_enemy) != 4) return CryptoStatus::InvalidParam;
-        if (p == 0) return CryptoStatus::InvalidParam;
+        mpz_t p, pub_enemy, priv, S;
+        mpz_inits(p, pub_enemy, priv, S, NULL);
+        
+        if (mpz_set_str(p, p_s.c_str(), 10) != 0 || mpz_set_str(pub_enemy, pub_enemy_s.c_str(), 10) != 0 || mpz_set_str(priv, priv_s.c_str(), 10) != 0) {
+            return CryptoStatus::InvalidParam;
+        }
 
-        uint64_t S = power_mod(pub_enemy, priv, p);
+        mpz_powm(S, pub_enemy, priv, p);
+        uint8_t secret_byte = static_cast<uint8_t>(mpz_get_ui(S) & 0xFF);
+        mpz_clears(p, pub_enemy, priv, S, NULL);
+
         for (size_t i = 0; i < input.size; ++i) {
-            output.data[i] = input.data[i] ^ (static_cast<uint8_t>(S & 0xFF));
+            output.data[i] = input.data[i] ^ secret_byte;
         }
         return CryptoStatus::Success;
     }

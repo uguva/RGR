@@ -1,0 +1,32 @@
+[
+{
+  "directory": "C:/Users/malyg/Downloads/VS CODE )))/MY-CREATION/build",
+  "command": "C:\\msys64\\ucrt64\\bin\\g++.exe -Drsa_EXPORTS -I\"C:/Users/malyg/Downloads/VS CODE )))/MY-CREATION/include\" -g -std=gnu++17 -o CMakeFiles\\rsa.dir\\modules\\rsa\\rsa_module.cpp.obj -c \"C:\\Users\\malyg\\Downloads\\VS CODE )))\\MY-CREATION\\modules\\rsa\\rsa_module.cpp\"",
+  "file": "C:/Users/malyg/Downloads/VS CODE )))/MY-CREATION/modules/rsa/rsa_module.cpp",
+  "output": "C:/Users/malyg/Downloads/VS CODE )))/MY-CREATION/build/CMakeFiles/rsa.dir/modules/rsa/rsa_module.cpp.obj"
+},
+{
+  "directory": "C:/Users/malyg/Downloads/VS CODE )))/MY-CREATION/build",
+  "command": "C:\\msys64\\ucrt64\\bin\\g++.exe -Ddh_EXPORTS -I\"C:/Users/malyg/Downloads/VS CODE )))/MY-CREATION/include\" -g -std=gnu++17 -o CMakeFiles\\dh.dir\\modules\\dh\\dh_module.cpp.obj -c \"C:\\Users\\malyg\\Downloads\\VS CODE )))\\MY-CREATION\\modules\\dh\\dh_module.cpp\"",
+  "file": "C:/Users/malyg/Downloads/VS CODE )))/MY-CREATION/modules/dh/dh_module.cpp",
+  "output": "C:/Users/malyg/Downloads/VS CODE )))/MY-CREATION/build/CMakeFiles/dh.dir/modules/dh/dh_module.cpp.obj"
+},
+{
+  "directory": "C:/Users/malyg/Downloads/VS CODE )))/MY-CREATION/build",
+  "command": "C:\\msys64\\ucrt64\\bin\\g++.exe -I\"C:/Users/malyg/Downloads/VS CODE )))/MY-CREATION/include\" -g -std=gnu++17 -o CMakeFiles\\crypto_app.dir\\src\\main.cpp.obj -c \"C:\\Users\\malyg\\Downloads\\VS CODE )))\\MY-CREATION\\src\\main.cpp\"",
+  "file": "C:/Users/malyg/Downloads/VS CODE )))/MY-CREATION/src/main.cpp",
+  "output": "C:/Users/malyg/Downloads/VS CODE )))/MY-CREATION/build/CMakeFiles/crypto_app.dir/src/main.cpp.obj"
+},
+{
+  "directory": "C:/Users/malyg/Downloads/VS CODE )))/MY-CREATION/build",
+  "command": "C:\\msys64\\ucrt64\\bin\\g++.exe -I\"C:/Users/malyg/Downloads/VS CODE )))/MY-CREATION/include\" -g -std=gnu++17 -o CMakeFiles\\crypto_app.dir\\src\\module_manager.cpp.obj -c \"C:\\Users\\malyg\\Downloads\\VS CODE )))\\MY-CREATION\\src\\module_manager.cpp\"",
+  "file": "C:/Users/malyg/Downloads/VS CODE )))/MY-CREATION/src/module_manager.cpp",
+  "output": "C:/Users/malyg/Downloads/VS CODE )))/MY-CREATION/build/CMakeFiles/crypto_app.dir/src/module_manager.cpp.obj"
+},
+{
+  "directory": "C:/Users/malyg/Downloads/VS CODE )))/MY-CREATION/build",
+  "command": "C:\\msys64\\ucrt64\\bin\\g++.exe -I\"C:/Users/malyg/Downloads/VS CODE )))/MY-CREATION/include\" -g -std=gnu++17 -o CMakeFiles\\crypto_app.dir\\src\\ui_utils.cpp.obj -c \"C:\\Users\\malyg\\Downloads\\VS CODE )))\\MY-CREATION\\src\\ui_utils.cpp\"",
+  "file": "C:/Users/malyg/Downloads/VS CODE )))/MY-CREATION/src/ui_utils.cpp",
+  "output": "C:/Users/malyg/Downloads/VS CODE )))/MY-CREATION/build/CMakeFiles/crypto_app.dir/src/ui_utils.cpp.obj"
+}
+]
