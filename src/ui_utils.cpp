@@ -169,6 +169,8 @@ vector<uint8_t> get_key_data(const string& algo_name, bool is_encrypt) {
             else cout << "Введите ключ (формат 'Private: d,n' или 'd,n') [или 0 для отмены]: ";
         } else if (algo_name == "DiffieHellman") {
             cout << "Введите ключ (формат 'p g priv pub_enemy' через пробел) [или 0 для отмены]: ";
+        } else if (algo_name == "Trithemius") {
+            cout << "Введите ключ (числовой сдвиг) [или 0 для отмены]: ";
         } else {
             cout << "Введите ключ [или 0 для отмены]: ";
         }
@@ -283,7 +285,7 @@ void process_keygen(LoadedModule* mod) {
     string algo_name = mod->name;
     string params = "";
 
-    if (algo_name == "AES" || algo_name == "DES" || algo_name == "Affine") {
+    if (algo_name == "AES" || algo_name == "DES" || algo_name == "Affine" || algo_name == "Blowfish" || algo_name == "Trithemius") {
         params = "auto";
     } else {
         if (algo_name == "Vernam") {
