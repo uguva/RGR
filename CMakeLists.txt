@@ -56,7 +56,7 @@ add_executable(crypto_app src/main.cpp src/module_manager.cpp src/ui_utils.cpp)
 if(WIN32)
     # В Windows функции динамической загрузки (LoadLibrary) встроены по умолчанию
 else()
-    target_link_libraries(crypto_app dl) # Для Linux подключаем dlfcn
+    target_link_libraries(crypto_app ${CMAKE_DL_LIBS}) # Для Linux подключаем dlfcn
 endif()
 
 
