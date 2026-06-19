@@ -1,14 +1,17 @@
 #include "ui_utils.h"
+#include "sha256.h"
 #include <iostream>
 #include <fstream>
 #include <cstdio>
 #include <limits>
 #include <stdexcept>
+#include <iterator>
 
 using std::cin;
 using std::cout;
 using std::endl;
 using std::string;
+using std::cerr;
 using std::vector;
 using std::ifstream;
 using std::ofstream;
@@ -18,6 +21,9 @@ using std::exception;
 using std::runtime_error;
 using std::streamsize;
 using std::numeric_limits;
+using std::istreambuf_iterator;
+
+const streamsize MAX_FILE_SIZE = 100 * 1024 * 1024; // Лимит 100 МБ
 
 void clear_input() {
     cin.clear();
@@ -28,7 +34,34 @@ bool login() {
     string password;
     cout << "Введите пароль для доступа к системе: ";
     cin >> password;
-    return (password == "admin123");
+    
+    const string EXPECTED_HASH = "0322a97bd570f02468b9f6e3d524d7d303173c8cde7f0c0f543d50a7d31935e8";
+    
+    string input_hash = sha256(password);
+    bool is_valid = (input_hash == EXPECTED_HASH);
+    
+    if (!password.empty()) {
+        secure_memory_clear(reinterpret_cast<uint8_t*>(&password[0]), password.size());
+    }
+    
+    return is_valid;
+}
+
+// Функция для безопасного удаления временного файла (затирание нулями перед удалением)
+void safe_delete_file(const string& path) {
+    if (path.empty()) return;
+    ofstream file(path, ios::binary | ios::in | ios::out);
+    if (file.is_open()) {
+        file.seekp(0, ios::end);
+        streamsize size = file.tellp();
+        file.seekp(0, ios::beg);
+        if (size > 0) {
+            vector<char> zeros(size, 0);
+            file.write(zeros.data(), size);
+        }
+        file.close();
+    }
+    std::remove(path.c_str());
 }
 
 vector<uint8_t> get_input_data(bool is_encrypt, string& created_file_path) {
@@ -63,15 +96,23 @@ vector<uint8_t> get_input_data(bool is_encrypt, string& created_file_path) {
         getline(cin, path);
         if (path == "0") throw CancelOperation();
         
-        ifstream file(path, ios::binary);
+        ifstream file(path, ios::binary | ios::ate);
         if (!file.is_open()) throw runtime_error("Не удалось открыть входной файл. Проверьте путь и права.");
+        
+        streamsize size = file.tellg();
+        if (size > MAX_FILE_SIZE) throw runtime_error("Файл слишком велик (ограничение 100 МБ).");
+        file.seekg(0, ios::beg);
+        
         return vector<uint8_t>((istreambuf_iterator<char>(file)), istreambuf_iterator<char>());
     } else if (choice == 2) {
         cout << "Введите текст (или 0 для отмены): ";
         string text;
         getline(cin, text);
         if (text == "0") throw CancelOperation();
-        return vector<uint8_t>(text.begin(), text.end());
+        
+        vector<uint8_t> res(text.begin(), text.end());
+        if (!text.empty()) secure_memory_clear(reinterpret_cast<uint8_t*>(&text[0]), text.size());
+        return res;
     } else {
         cout << "Введите путь для нового файла (или 0 для отмены): ";
         string path;
@@ -87,8 +128,10 @@ vector<uint8_t> get_input_data(bool is_encrypt, string& created_file_path) {
         file << text;
         file.close();
 
-        created_file_path = path; // Запоминаем для удаления в случае отмены на следующих шагах
-        return vector<uint8_t>(text.begin(), text.end());
+        created_file_path = path;
+        vector<uint8_t> res(text.begin(), text.end());
+        if (!text.empty()) secure_memory_clear(reinterpret_cast<uint8_t*>(&text[0]), text.size());
+        return res;
     }
 }
 
@@ -112,13 +155,18 @@ vector<uint8_t> get_key_data(const string& algo_name, bool is_encrypt) {
         getline(cin, path);
         if (path == "0") throw CancelOperation();
         
-        ifstream file(path, ios::binary);
+        ifstream file(path, ios::binary | ios::ate);
         if (!file.is_open()) throw runtime_error("Не удалось открыть файл ключа.");
+        
+        streamsize size = file.tellg();
+        if (size > MAX_FILE_SIZE) throw runtime_error("Файл ключа слишком велик.");
+        file.seekg(0, ios::beg);
+        
         return vector<uint8_t>((istreambuf_iterator<char>(file)), istreambuf_iterator<char>());
     } else {
         if (algo_name == "RSA") {
-            if (is_encrypt) cout << "Введите ключ (формат 'Public: e,n' или просто 'e,n') [или 0 для отмены]: ";
-            else cout << "Введите ключ (формат 'Private: d,n' или просто 'd,n') [или 0 для отмены]: ";
+            if (is_encrypt) cout << "Введите ключ (формат 'Public: e,n' или 'e,n') [или 0 для отмены]: ";
+            else cout << "Введите ключ (формат 'Private: d,n' или 'd,n') [или 0 для отмены]: ";
         } else if (algo_name == "DiffieHellman") {
             cout << "Введите ключ (формат 'p g priv pub_enemy' через пробел) [или 0 для отмены]: ";
         } else {
@@ -127,7 +175,10 @@ vector<uint8_t> get_key_data(const string& algo_name, bool is_encrypt) {
         string text;
         getline(cin, text);
         if (text == "0") throw CancelOperation();
-        return vector<uint8_t>(text.begin(), text.end());
+        
+        vector<uint8_t> res(text.begin(), text.end());
+        if (!text.empty()) secure_memory_clear(reinterpret_cast<uint8_t*>(&text[0]), text.size());
+        return res;
     }
 }
 
@@ -159,12 +210,21 @@ void save_output_data(const vector<uint8_t>& data, bool is_encrypt) {
                 path += ".bin";
             }
         }
-        // Открываем файл строго в бинарном режиме ios::binary
+        
+        // Проверка на перезапись файла
+        ifstream check_file(path);
+        if (check_file.is_open()) {
+            check_file.close();
+            cout << "[ВНИМАНИЕ]: Файл уже существует. Перезаписать? (1 - Да, 0 - Отмена): ";
+            int overwrite = get_choice<int>(0, 1);
+            if (overwrite == 0) throw CancelOperation();
+        }
+
         ofstream file(path, ios::binary);
         if (!file.is_open()) throw runtime_error("Не удалось создать файл для записи.");
 
         file.write(reinterpret_cast<const char*>(data.data()), data.size());
-        file.close(); // Явно закрываем поток
+        file.close();
         
         cout << ">>> Успешно! Файл сохранен: " << path << endl;
     } else {
@@ -201,7 +261,6 @@ void process_crypto(LoadedModule* mod, bool is_encrypt) {
             throw runtime_error("Криптографическая операция завершилась ошибкой.");
         }
 
-        // Безопасная очистка оперативной памяти
         secure_memory_clear(key_data);
         secure_memory_clear(in_data);
         secure_memory_clear(out_data);
@@ -209,12 +268,12 @@ void process_crypto(LoadedModule* mod, bool is_encrypt) {
     } catch (const CancelOperation& e) {
         cout << "\n[" << e.what() << " Возврат в меню...]\n" << endl;
         if (!temp_file_path.empty()) {
-            std::remove(temp_file_path.c_str());
+            safe_delete_file(temp_file_path);
             cout << "[СИСТЕМА]: Созданный временный файл удален." << endl;
         }
     } catch (const exception& e) {
         cerr << "\n[ОШИБКА]: " << e.what() << "\n" << endl;
-        if (!temp_file_path.empty()) std::remove(temp_file_path.c_str());
+        if (!temp_file_path.empty()) safe_delete_file(temp_file_path);
     }
 }
 
@@ -224,11 +283,9 @@ void process_keygen(LoadedModule* mod) {
     string algo_name = mod->name;
     string params = "";
 
-    // 1. Интеллектуальный пропуск ввода для симметричных шифров
     if (algo_name == "AES" || algo_name == "DES" || algo_name == "Affine") {
-        params = "auto"; // Фиктивный параметр для прохождения проверок
+        params = "auto";
     } else {
-        // Для RSA, DH и Vernam запрашиваем реальные данные
         if (algo_name == "Vernam") {
             cout << "Введите длину ключа (число) [или 0 для отмены]: ";
         } else if (mod->name == "DiffieHellman") {
@@ -244,10 +301,14 @@ void process_keygen(LoadedModule* mod) {
         }
     }
 
-    // 2. Буфер и вызов функции генерации из DLL/SO
     vector<char> buffer(4096, 0);
     size_t written = 0;
     CryptoStatus status = mod->generate_keys(params.c_str(), buffer.data(), buffer.size(), &written);
+
+    // Очистка параметров генерации из памяти
+    if (!params.empty() && params != "auto") {
+        secure_memory_clear(reinterpret_cast<uint8_t*>(&params[0]), params.size());
+    }
 
     if (status != CryptoStatus::Success) {
         cout << "[ОШИБКА]: Сбой генерации ключа. Код: " << static_cast<int>(status) << endl;
@@ -257,7 +318,6 @@ void process_keygen(LoadedModule* mod) {
     string key_str(buffer.data(), written);
     cout << "\n>>> Ключи успешно сгенерированы!\n" << endl;
 
-    // 3. Выбор способа сохранения
     cout << "Как поступить со сгенерированными ключами?\n";
     cout << "1. Вывести результаты в консоль\n";
     cout << "2. Сохранить результаты в файл\n";
@@ -273,13 +333,18 @@ void process_keygen(LoadedModule* mod) {
         string filepath;
         getline(cin, filepath);
         
-        std::ofstream out(filepath, std::ios::binary);
+        ofstream out(filepath, std::ios::binary);
         if (out.is_open()) {
             out.write(key_str.c_str(), key_str.size());
             cout << "[*] Ключи успешно сохранены в файл: " << filepath << endl;
         } else {
             cout << "[ОШИБКА]: Не удалось записать данные в файл." << endl;
         }
+    }
+    
+    // Очистка сгенерированного ключа из памяти строки
+    if (!key_str.empty()) {
+        secure_memory_clear(reinterpret_cast<uint8_t*>(&key_str[0]), key_str.size());
     }
 }
 
@@ -289,7 +354,6 @@ void run_sub_menu(LoadedModule* mod, const string& menu_name) {
         return; 
     }
     
-    // Локальное перечисление пунктов подменю
     enum class SubMenuOption { Back = 0, Keygen = 1, Encrypt = 2, Decrypt = 3 };
 
     while (true) {
@@ -301,7 +365,7 @@ void run_sub_menu(LoadedModule* mod, const string& menu_name) {
             case SubMenuOption::Keygen:  process_keygen(mod); break;
             case SubMenuOption::Encrypt: process_crypto(mod, true); break;
             case SubMenuOption::Decrypt: process_crypto(mod, false); break;
-            case SubMenuOption::Back:    return; // Выход из подменю и возврат в главное меню
+            case SubMenuOption::Back:    return;
         }
     }
 }
