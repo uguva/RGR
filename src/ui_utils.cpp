@@ -285,14 +285,20 @@ void process_keygen(LoadedModule* mod) {
     string algo_name = mod->name;
     string params = "";
 
-    if (algo_name == "AES" || algo_name == "DES" || algo_name == "Affine" || algo_name == "Blowfish" || algo_name == "Trithemius") {
+    // 1. Обработка ввода параметров (уникальная для каждого алгоритма)
+    if (algo_name == "AES" || algo_name == "DES" || algo_name == "Affine") {
         params = "auto";
     } else {
         if (algo_name == "Vernam") {
             cout << "Введите длину ключа (число) [или 0 для отмены]: ";
-        } else if (mod->name == "DiffieHellman") {
+        } else if (algo_name == "DiffieHellman") {
             cout << "Введите генератор, простое число и секретный ключ (g p a) через пробел [или 0 для отмены]: ";
+        } else if (algo_name == "Blowfish") {
+            cout << "Введите seed (строка) [или 0 для отмены]: ";
+        } else if (algo_name == "Trithemius") {
+            cout << "Введите seed (строка) [или 0 для отмены]: ";
         } else {
+            // Для RSA или иных неизвестных алгоритмов
             cout << "Введите два простых числа через пробел (p q) [или 0 для отмены]: ";
         }
         
@@ -303,11 +309,11 @@ void process_keygen(LoadedModule* mod) {
         }
     }
 
+    // 2. Генерация ключа (общая логика для всех)
     vector<char> buffer(4096, 0);
     size_t written = 0;
     CryptoStatus status = mod->generate_keys(params.c_str(), buffer.data(), buffer.size(), &written);
-
-    // Очистка параметров генерации из памяти
+    // Безопасная очистка параметров из оперативной памяти
     if (!params.empty() && params != "auto") {
         secure_memory_clear(reinterpret_cast<uint8_t*>(&params[0]), params.size());
     }
@@ -320,6 +326,7 @@ void process_keygen(LoadedModule* mod) {
     string key_str(buffer.data(), written);
     cout << "\n>>> Ключи успешно сгенерированы!\n" << endl;
 
+    // 3. Вывод/Сохранение (общая логика для всех)
     cout << "Как поступить со сгенерированными ключами?\n";
     cout << "1. Вывести результаты в консоль\n";
     cout << "2. Сохранить результаты в файл\n";
@@ -344,14 +351,14 @@ void process_keygen(LoadedModule* mod) {
         }
     }
     
-    // Очистка сгенерированного ключа из памяти строки
+    // 4. Очистка ключа из памяти (безопасность!)
     if (!key_str.empty()) {
         secure_memory_clear(reinterpret_cast<uint8_t*>(&key_str[0]), key_str.size());
     }
 }
 
 void run_sub_menu(LoadedModule* mod, const string& menu_name) {
-    if (!mod) { 
+    if (!mod) {
         std::cerr << "[ОШИБКА]: Модуль " << menu_name << " не загружен!" << endl; 
         return; 
     }
