@@ -10,6 +10,8 @@
     #define byte _windows_byte 
     #include <windows.h>
     #undef byte
+#else
+    #include <dlfcn.h>
 #endif
 
 
