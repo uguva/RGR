@@ -44,7 +44,7 @@ static int generate_random_shift() {
     return rand() % 256;
 }
 
-int affine_generate_key(uint8_t key[2]) {
+extern "C" int affine_generate_key(uint8_t key[2]) {
     int multiplier = generate_random_multiplier();
     int shift = generate_random_shift();
     key[0] = (uint8_t)multiplier;
@@ -52,7 +52,7 @@ int affine_generate_key(uint8_t key[2]) {
     return 0;
 }
 
-int affine_encrypt(const uint8_t* plain_data, size_t plain_length,
+extern "C" int affine_encrypt(const uint8_t* plain_data, size_t plain_length,
                    const uint8_t* key_data, size_t key_length,
                    uint8_t* cipher_data, size_t* cipher_length) {
     if (key_length < 2) return 1;
@@ -70,7 +70,7 @@ int affine_encrypt(const uint8_t* plain_data, size_t plain_length,
     return 0;
 }
 
-int affine_decrypt(const uint8_t* cipher_data, size_t cipher_length,
+extern "C" int affine_decrypt(const uint8_t* cipher_data, size_t cipher_length,
                    const uint8_t* key_data, size_t key_length,
                    uint8_t* plain_data, size_t* plain_length) {
     if (key_length < 2) return 1;
