@@ -70,6 +70,7 @@ int main() {
             case MenuOption::Affine:        run_sub_menu(manager.get_module("Affine"), "Аффинный шифр"); break;
             case MenuOption::Vernam:        run_sub_menu(manager.get_module("Vernam"), "Шифр Вернама"); break;
             case MenuOption::Exit:          cout << "Завершение работы..." << endl; return 0;
+            default: break;
         }
     }
     return 0;
