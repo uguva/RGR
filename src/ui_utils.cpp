@@ -27,7 +27,7 @@ const streamsize MAX_FILE_SIZE = 100 * 1024 * 1024; // Лимит 100 МБ
 
 void clear_input() {
     cin.clear();
-    cin.ignore(numeric_limits<streamsize>::max(), '\n');
+    cin.ignore((numeric_limits<streamsize>::max)(), '\n');
 }
 
 bool login() {
