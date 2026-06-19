@@ -43,6 +43,12 @@ add_library(affine SHARED modules/affine/affine_module.cpp)
 # Модуль Шифра Вернама
 add_library(vernam SHARED modules/vernam/vernam_module.cpp)
 
+# Модуль Тритемиуса
+add_library(trithemius SHARED modules/trithemius/trithemius_module.cpp)
+
+# Модуль Blowfish (требует OpenSSL)
+add_library(blowfish SHARED modules/blowfish/blowfish_module.cpp)
+target_link_libraries(blowfish crypto)
 
 # === СБОРКА ОСНОВНОГО ПРИЛОЖЕНИЯ ===
 add_executable(crypto_app src/main.cpp src/module_manager.cpp src/ui_utils.cpp)
@@ -68,3 +74,5 @@ copy_plugin_target(aes aes)
 copy_plugin_target(des des)
 copy_plugin_target(affine affine)
 copy_plugin_target(vernam vernam)
+copy_plugin_target(trithemius trithemius)
+copy_plugin_target(blowfish blowfish)
