@@ -11,7 +11,6 @@ using std::endl;
 using std::string;
 using std::exception;
 
-// Добавлены новые алгоритмы
 enum class MenuOption { Exit = 0, RSA = 1, DiffieHellman = 2, AES = 3, DES = 4, Affine = 5, Vernam = 6, Trithemius = 7, Blowfish = 8 };
 
 #ifdef _WIN32
@@ -62,7 +61,6 @@ int main() {
              << "5. Аффинный шифр\n6. Шифр Вернама\n7. Шифр Тритемиуса\n8. Протокол Blowfish\n0. Выход" << endl;
         cout << "Выберите операцию: ";
         
-        // Обновите лимит выбора с 6 до 8
         MenuOption choice = static_cast<MenuOption>(get_choice<int>(0, 8));
 
         switch (choice) {
