@@ -256,7 +256,12 @@ void process_crypto(LoadedModule* mod, bool is_encrypt) {
         CryptoStatus status = is_encrypt ? mod->encrypt_func(src, key, dst) : mod->decrypt_func(src, key, dst);
 
         if (status == CryptoStatus::Success) {
-            save_output_data(out_data, is_encrypt); 
+            if (!is_encrypt && mod->name == "RSA") {
+                while (!out_data.empty() && out_data.back() == 0) {
+                    out_data.pop_back();
+                }
+            }
+        save_output_data(out_data, is_encrypt); 
         } else if (status == CryptoStatus::InvalidParam) {
             throw runtime_error("Неверный формат ключа или параметров шифра.");
         } else {
@@ -285,7 +290,7 @@ void process_keygen(LoadedModule* mod) {
     string algo_name = mod->name;
     string params = "";
 
-    // 1. Обработка ввода параметров (уникальная для каждого алгоритма)
+    // 1. Обработка ввода параметров
     if (algo_name == "AES" || algo_name == "DES" || algo_name == "Affine") {
         params = "auto";
     } else {
@@ -351,7 +356,7 @@ void process_keygen(LoadedModule* mod) {
         }
     }
     
-    // 4. Очистка ключа из памяти (безопасность!)
+    // 4. Очистка ключа из памяти
     if (!key_str.empty()) {
         secure_memory_clear(reinterpret_cast<uint8_t*>(&key_str[0]), key_str.size());
     }
