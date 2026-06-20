@@ -38,6 +38,7 @@ add_library(des SHARED modules/des/des_module.cpp)
 
 # Модуль Аффинного шифра
 add_library(affine SHARED modules/affine/affine_module.cpp)
+target_link_libraries(affine gmp)
 
 # Модуль Шифра Вернама
 add_library(vernam SHARED modules/vernam/vernam_module.cpp)
