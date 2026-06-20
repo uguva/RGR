@@ -12,7 +12,17 @@ extern "C" {
 
     CryptoStatus get_output_size(size_t input_size, size_t* out_size, bool is_encrypt) {
         if (!out_size) return CryptoStatus::InvalidParam;
-        *out_size = is_encrypt ? (input_size * 8) : (input_size / 8);
+        
+        const size_t MAX_RSA_BLOCK_SIZE = 512; // выше некуда)
+
+        if (is_encrypt) {
+            // память под худший случай
+            *out_size = input_size * MAX_RSA_BLOCK_SIZE;
+        } else {
+
+            *out_size = input_size;
+        }
+
         return CryptoStatus::Success;
     }
 
@@ -54,39 +64,57 @@ extern "C" {
         return CryptoStatus::Success;
     }
 
-    CryptoStatus encrypt(ConstBuffer input, ConstBuffer key, MutBuffer output) {
-        std::string k(reinterpret_cast<const char*>(key.data), key.size);
-        size_t pos = k.find("Public:");
-        if (pos != std::string::npos) k = k.substr(pos + 7);
-        
-        for (char& c : k) if (c == ',') c = ' '; // Заменяем запятую на пробел для sstream
-        std::istringstream iss(k);
-        std::string e_str, n_str;
-        if (!(iss >> e_str >> n_str)) return CryptoStatus::InvalidParam;
+CryptoStatus encrypt(ConstBuffer input, ConstBuffer key, MutBuffer output) {
+    std::string k(reinterpret_cast<const char*>(key.data), key.size);
+    size_t pos = k.find("Public:");
+    if (pos != std::string::npos) k = k.substr(pos + 7);
+    
+    for (char& c : k) if (c == ',') c = ' ';
+    std::istringstream iss(k);
+    std::string e_str, n_str;
+    if (!(iss >> e_str >> n_str)) return CryptoStatus::InvalidParam;
 
-        mpz_t m, c, e, n;
-        mpz_inits(m, c, e, n, NULL);
-        if (mpz_set_str(e, e_str.c_str(), 10) != 0 || mpz_set_str(n, n_str.c_str(), 10) != 0) return CryptoStatus::InvalidParam;
-
-        if (output.size < input.size * 8) return CryptoStatus::BufferTooSmall;
-
-        for (size_t i = 0; i < input.size; i++) {
-            mpz_set_ui(m, input.data[i]);
-            mpz_powm(c, m, e, n); // c = (m^e) mod n
-            
-            // Экспортируем результат в 8 байт (Little Endian формат)
-            uint8_t buffer[8] = {0};
-            size_t count = 0;
-            mpz_export(buffer, &count, -1, 1, 0, 0, c);
-            memcpy(output.data + (i * 8), buffer, 8);
-        }
+    mpz_t m, c, e, n;
+    mpz_inits(m, c, e, n, NULL);
+    if (mpz_set_str(e, e_str.c_str(), 10) != 0 || mpz_set_str(n, n_str.c_str(), 10) != 0) {
         mpz_clears(m, c, e, n, NULL);
-        return CryptoStatus::Success;
+        return CryptoStatus::InvalidParam;
+    }
+
+    // динамический размер блока в байтах
+    size_t bits = mpz_sizeinbase(n, 2);
+    size_t bytes_needed = (bits + 7) / 8; // Округление вверх
+
+
+    if (output.size < input.size * bytes_needed) {
+        mpz_clears(m, c, e, n, NULL);
+        return CryptoStatus::BufferTooSmall;
+    }
+
+    for (size_t i = 0; i < input.size; i++) {
+        mpz_set_ui(m, input.data[i]);
+        mpz_powm(c, m, e, n); 
+        
+        // динамический буфер
+        std::vector<uint8_t> buffer(bytes_needed, 0);
+        size_t count = 0;
+        
+
+        mpz_export(buffer.data(), &count, 1, 1, 1, 0, c);
+        
+
+        size_t offset = i * bytes_needed;
+        if (count < bytes_needed) {
+            memcpy(output.data + offset + (bytes_needed - count), buffer.data(), count);
+        } else {
+            memcpy(output.data + offset, buffer.data(), bytes_needed);
+        }
+    }
+    mpz_clears(m, c, e, n, NULL);
+    return CryptoStatus::Success;
     }
 
     CryptoStatus decrypt(ConstBuffer input, ConstBuffer key, MutBuffer output) {
-        if (input.size % 8 != 0) return CryptoStatus::InvalidParam;
-
         std::string k(reinterpret_cast<const char*>(key.data), key.size);
         size_t pos = k.find("Private:");
         if (pos != std::string::npos) k = k.substr(pos + 8);
@@ -98,16 +126,32 @@ extern "C" {
 
         mpz_t c, m, d, n;
         mpz_inits(c, m, d, n, NULL);
-        if (mpz_set_str(d, d_str.c_str(), 10) != 0 || mpz_set_str(n, n_str.c_str(), 10) != 0) return CryptoStatus::InvalidParam;
+        if (mpz_set_str(d, d_str.c_str(), 10) != 0 || mpz_set_str(n, n_str.c_str(), 10) != 0) {
+            mpz_clears(c, m, d, n, NULL);
+            return CryptoStatus::InvalidParam;
+        }
 
-        if (output.size < input.size / 8) return CryptoStatus::BufferTooSmall;
+        size_t bits = mpz_sizeinbase(n, 2);
+        size_t bytes_needed = (bits + 7) / 8;
 
-        for (size_t i = 0; i < input.size / 8; i++) {
-            uint8_t buffer[8];
-            memcpy(buffer, input.data + (i * 8), 8);
+        // Проверка целостности данных
+        if (input.size % bytes_needed != 0) {
+            mpz_clears(c, m, d, n, NULL);
+            return CryptoStatus::InvalidParam;
+        }
+
+        if (output.size < input.size / bytes_needed) {
+            mpz_clears(c, m, d, n, NULL);
+            return CryptoStatus::BufferTooSmall;
+        }
+
+        for (size_t i = 0; i < input.size / bytes_needed; i++) {
+
+            std::vector<uint8_t> buffer(bytes_needed);
+            memcpy(buffer.data(), input.data + (i * bytes_needed), bytes_needed);
             
-            // Импортируем из 8 байт (Little Endian формат)
-            mpz_import(c, 8, -1, 1, 0, 0, buffer);
+
+            mpz_import(c, bytes_needed, 1, 1, 1, 0, buffer.data());
             mpz_powm(m, c, d, n);
             
             output.data[i] = static_cast<uint8_t>(mpz_get_ui(m));
