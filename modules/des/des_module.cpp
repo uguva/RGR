@@ -1,4 +1,5 @@
 #include "crypto_interface.h"
+#include <gmp.h>
 #include <vector>
 #include <array>
 #include <string>
@@ -15,7 +16,6 @@ namespace {
     constexpr uint8_t SALT_SIZE = 8;
     constexpr uint8_t IV_SIZE = 8;
 
-    // Классические конфигурационные матрицы перестановок DES
     const int IP[64] = {
         58,50,42,34,26,18,10,2,60,52,44,36,28,20,12,4,
         62,54,46,38,30,22,14,6,64,56,48,40,32,24,16,8,
@@ -60,58 +60,153 @@ namespace {
         {{13,2,8,4,6,15,11,1,10,9,3,14,5,0,12,7},{1,15,13,8,10,3,7,4,12,5,6,11,0,14,9,2},{7,11,4,1,9,12,14,2,0,6,10,13,15,3,5,8},{2,1,14,7,4,10,8,13,15,12,9,0,3,5,6,11}}
     };
 
-    uint64_t permute(uint64_t input, const int* table, int n, int inputBits) {
-        uint64_t output = 0;
+    void init_mpz_array(mpz_t* arr, size_t n) {
+        for (size_t i = 0; i < n; ++i) {
+            mpz_init(arr[i]);
+        }
+    }
+
+    void clear_mpz_array(mpz_t* arr, size_t n) {
+        for (size_t i = 0; i < n; ++i) {
+            mpz_clear(arr[i]);
+        }
+    }
+
+    void mpz_mask_bits(mpz_t rop, const mpz_t op, unsigned long bits) {
+        mpz_fdiv_r_2exp(rop, op, bits);
+    }
+
+    void permute(mpz_t output, const mpz_t input, const int* table, int n, int inputBits) {
+        mpz_set_ui(output, 0);
         for (int i = 0; i < n; ++i) {
-            output <<= 1;
-            output |= (input >> (inputBits - table[i])) & 1ULL;
+            mpz_mul_2exp(output, output, 1);
+            if (mpz_tstbit(input, static_cast<unsigned long>(inputBits - table[i]))) {
+                mpz_add_ui(output, output, 1);
+            }
         }
-        return output;
     }
-    uint32_t permute32(uint32_t input, const int* table, int n) { return static_cast<uint32_t>(permute(input, table, n, 32)); }
-    uint64_t bytesToU64(const uint8_t* data) {
-        uint64_t v = 0;
-        for (int i = 0; i < 8; ++i) v = (v << 8) | data[i];
-        return v;
-    }
-    void u64ToBytes(uint64_t value, uint8_t* data) {
-        for (int i = 7; i >= 0; --i) { data[i] = value & 0xFF; value >>= 8; }
-    }
-    uint32_t rotl28(uint32_t x, int n) { return ((x << n) | (x >> (28 - n))) & 0x0FFFFFFF; }
 
-    uint32_t feistel(uint32_t right, uint64_t subkey) {
-        uint64_t expanded = permute(right, E, 48, 32) ^ subkey;
-        uint32_t sOut = 0;
+    void bytesToMpz(mpz_t value, const uint8_t* data, size_t len) {
+        mpz_import(value, len, 1, 1, 1, 0, data);
+    }
+
+    void mpzToBytes(const mpz_t value, uint8_t* data, size_t len) {
+        memset(data, 0, len);
+        size_t count = 0;
+        uint8_t tmp[16] = {0};
+        mpz_export(tmp, &count, 1, 1, 1, 0, value);
+        if (count >= len) {
+            memcpy(data, tmp + (count - len), len);
+        } else if (count > 0) {
+            memcpy(data + (len - count), tmp, count);
+        }
+    }
+
+    void rotl28(mpz_t out, const mpz_t x, int n) {
+        mpz_t left, right;
+        mpz_init(left);
+        mpz_init(right);
+        mpz_mul_2exp(left, x, n);
+        mpz_fdiv_r_2exp(left, left, 28);
+        mpz_fdiv_q_2exp(right, x, 28 - n);
+        mpz_add(out, left, right);
+        mpz_fdiv_r_2exp(out, out, 28);
+        mpz_clear(left);
+        mpz_clear(right);
+    }
+
+    void feistel(mpz_t out, const mpz_t right, const mpz_t subkey) {
+        mpz_t expanded, sOut, chunk, tmp;
+        mpz_init(expanded);
+        mpz_init(sOut);
+        mpz_init(chunk);
+        mpz_init(tmp);
+
+        permute(expanded, right, E, 48, 32);
+        mpz_xor(expanded, expanded, subkey);
+        mpz_set_ui(sOut, 0);
+
         for (int box = 0; box < 8; ++box) {
-            uint8_t chunk = (expanded >> (42 - 6 * box)) & 0x3F;
-            int row = ((chunk & 0x20) >> 4) | (chunk & 0x01);
-            int col = (chunk >> 1) & 0x0F;
-            sOut = (sOut << 4) | SBOX[box][row][col];
+            mpz_fdiv_q_2exp(tmp, expanded, 42 - 6 * box);
+            mpz_fdiv_r_2exp(chunk, tmp, 6);
+            unsigned long c = mpz_get_ui(chunk);
+            int row = static_cast<int>(((c & 0x20) >> 4) | (c & 0x01));
+            int col = static_cast<int>((c >> 1) & 0x0F);
+            mpz_mul_2exp(sOut, sOut, 4);
+            mpz_add_ui(sOut, sOut, static_cast<unsigned long>(SBOX[box][row][col]));
         }
-        return permute32(sOut, P, 32);
+
+        permute(out, sOut, P, 32, 32);
+        mpz_fdiv_r_2exp(out, out, 32);
+
+        mpz_clear(expanded);
+        mpz_clear(sOut);
+        mpz_clear(chunk);
+        mpz_clear(tmp);
     }
 
-    array<uint64_t, 16> buildSubKeys(const vector<uint8_t>& key) {
-        array<uint64_t, 16> subkeys{};
-        uint64_t key64 = bytesToU64(key.data());
-        uint64_t perm56 = permute(key64, PC1, 56, 64);
-        uint32_t c = (perm56 >> 28) & 0x0FFFFFFF, d = perm56 & 0x0FFFFFFF;
+    void buildSubKeys(const vector<uint8_t>& key, mpz_t subkeys[16]) {
+        mpz_t keyMpz, perm56, c, d, cd, tmp;
+        mpz_init(keyMpz);
+        mpz_init(perm56);
+        mpz_init(c);
+        mpz_init(d);
+        mpz_init(cd);
+        mpz_init(tmp);
+
+        bytesToMpz(keyMpz, key.data(), key.size());
+        permute(perm56, keyMpz, PC1, 56, 64);
+        mpz_fdiv_q_2exp(c, perm56, 28);
+        mpz_fdiv_r_2exp(d, perm56, 28);
+
         for (int round = 0; round < 16; ++round) {
-            c = rotl28(c, SHIFTS[round]); d = rotl28(d, SHIFTS[round]);
-            subkeys[round] = permute(((static_cast<uint64_t>(c) << 28) | d), PC2, 48, 56);
+            rotl28(c, c, SHIFTS[round]);
+            rotl28(d, d, SHIFTS[round]);
+            mpz_mul_2exp(cd, c, 28);
+            mpz_add(cd, cd, d);
+            permute(subkeys[round], cd, PC2, 48, 56);
+            mpz_fdiv_r_2exp(subkeys[round], subkeys[round], 48);
         }
-        return subkeys;
+
+        mpz_clear(keyMpz);
+        mpz_clear(perm56);
+        mpz_clear(c);
+        mpz_clear(d);
+        mpz_clear(cd);
+        mpz_clear(tmp);
     }
 
-    uint64_t processBlock(uint64_t block, const array<uint64_t, 16>& subkeys) {
-        block = permute(block, IP, 64, 64);
-        uint32_t left = block >> 32, right = block & 0xFFFFFFFFULL;
+    void processBlock(mpz_t out, const mpz_t block, mpz_t subkeys[16]) {
+        mpz_t b, left, right, temp, f;
+        mpz_init(b);
+        mpz_init(left);
+        mpz_init(right);
+        mpz_init(temp);
+        mpz_init(f);
+
+        permute(b, block, IP, 64, 64);
+        mpz_fdiv_q_2exp(left, b, 32);
+        mpz_fdiv_r_2exp(right, b, 32);
+
         for (int round = 0; round < 16; ++round) {
-            uint32_t temp = right;
-            right = left ^ feistel(right, subkeys[round]);
-            left = temp;
+            mpz_set(temp, right);
+            feistel(f, right, subkeys[round]);
+            mpz_xor(right, left, f);
+            mpz_fdiv_r_2exp(right, right, 32);
+            mpz_set(left, temp);
+            mpz_fdiv_r_2exp(left, left, 32);
         }
-        return permute(((static_cast<uint64_t>(right) << 32) | left), FP, 64, 64);
+
+        mpz_mul_2exp(temp, right, 32);
+        mpz_add(temp, temp, left);
+        permute(out, temp, FP, 64, 64);
+        mpz_fdiv_r_2exp(out, out, 64);
+
+        mpz_clear(b);
+        mpz_clear(left);
+        mpz_clear(right);
+        mpz_clear(temp);
+        mpz_clear(f);
     }
 
     vector<uint8_t> deriveKey(const vector<uint8_t>& password, const vector<uint8_t>& salt, size_t keyLen) {
@@ -125,7 +220,8 @@ namespace {
             for (size_t i = 0; i < keyLen; ++i) {
                 uint8_t p = password[(i + round) % password.size()], s = salt.empty() ? 0 : salt[(i + round) % salt.size()];
                 uint8_t x = key[i] ^ p ^ s ^ static_cast<uint8_t>(round + i);
-                key[i] = (x << ((i + round) & 7)) | (x >> (8 - ((i + round) & 7)));
+                uint8_t shift = static_cast<uint8_t>((i + round) & 7);
+                key[i] = static_cast<uint8_t>((x << shift) | (x >> (8 - shift)));
             }
         }
         return key;
@@ -147,7 +243,7 @@ extern "C" {
         if (!out_size) return CryptoStatus::InvalidParam;
         if (is_encrypt) {
             size_t padded = input_size + (8 - (input_size % 8));
-            *out_size = 24 + padded; // Header(8) + Salt(8) + IV(8) + Padded Data
+            *out_size = 24 + padded;
         } else {
             *out_size = input_size > 24 ? input_size - 24 : 0;
         }
@@ -156,88 +252,143 @@ extern "C" {
 
     CryptoStatus generate_keys(const char* params, char* out_buffer, size_t max_size, size_t* written) {
         static const char alphanum[] = "0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz";
-        string res = "";
+        (void)params;
+        string res;
         random_device rd; mt19937 gen(rd()); uniform_int_distribution<int> dist(0, sizeof(alphanum) - 2);
         for (int i = 0; i < 8; ++i) res += alphanum[dist(gen)];
-        if (res.size() >= max_size) return CryptoStatus::BufferTooSmall;
+        if (res.size() + 1 > max_size) return CryptoStatus::BufferTooSmall;
         strcpy(out_buffer, res.c_str());
-        *written = res.size();
+        if (written) *written = res.size();
         return CryptoStatus::Success;
     }
 
     CryptoStatus encrypt(ConstBuffer input, ConstBuffer key, MutBuffer output) {
         if (input.size == 0 || key.size == 0) return CryptoStatus::InvalidParam;
+
+        CryptoStatus status = CryptoStatus::Success;
         vector<uint8_t> pwd(key.data, key.data + key.size), in(input.data, input.data + input.size);
         pkcs7Pad(in, DES_BLOCK_SIZE);
 
         vector<uint8_t> salt(SALT_SIZE), iv(IV_SIZE);
         random_device rd; mt19937 gen(rd()); uniform_int_distribution<int> dist(0, 255);
-        for (size_t i = 0; i < SALT_SIZE; ++i) { salt[i] = dist(gen); iv[i] = dist(gen); }
+        for (size_t i = 0; i < SALT_SIZE; ++i) {
+            salt[i] = static_cast<uint8_t>(dist(gen));
+            iv[i] = static_cast<uint8_t>(dist(gen));
+        }
 
         vector<uint8_t> derived = deriveKey(pwd, salt, DES_KEY_SIZE);
-        array<uint64_t, 16> subkeys = buildSubKeys(derived);
+        mpz_t subkeys[16];
+        init_mpz_array(subkeys, 16);
+        buildSubKeys(derived, subkeys);
 
         vector<uint8_t> cipher;
         cipher.insert(cipher.end(), MAGIC, MAGIC + 4);
-        cipher.push_back(VERSION); cipher.push_back(2); // 2 = DES
-        cipher.push_back(SALT_SIZE); cipher.push_back(IV_SIZE);
+        cipher.push_back(VERSION);
+        cipher.push_back(2);
+        cipher.push_back(SALT_SIZE);
+        cipher.push_back(IV_SIZE);
         cipher.insert(cipher.end(), salt.begin(), salt.end());
         cipher.insert(cipher.end(), iv.begin(), iv.end());
 
         array<uint8_t, DES_BLOCK_SIZE> prev{};
         memcpy(prev.data(), iv.data(), IV_SIZE);
 
+        mpz_t blockIn, blockOut;
+        mpz_init(blockIn);
+        mpz_init(blockOut);
+
         for (size_t offset = 0; offset < in.size(); offset += DES_BLOCK_SIZE) {
             array<uint8_t, DES_BLOCK_SIZE> block{};
-            for (size_t i = 0; i < DES_BLOCK_SIZE; ++i) block[i] = in[offset + i] ^ prev[i];
-            uint64_t b64 = processBlock(bytesToU64(block.data()), subkeys);
-            u64ToBytes(b64, block.data());
+            for (size_t i = 0; i < DES_BLOCK_SIZE; ++i) {
+                block[i] = static_cast<uint8_t>(in[offset + i] ^ prev[i]);
+            }
+            bytesToMpz(blockIn, block.data(), DES_BLOCK_SIZE);
+            processBlock(blockOut, blockIn, subkeys);
+            mpzToBytes(blockOut, block.data(), DES_BLOCK_SIZE);
             cipher.insert(cipher.end(), block.begin(), block.end());
             prev = block;
         }
 
-        if (output.size < cipher.size()) return CryptoStatus::BufferTooSmall;
+        if (output.size < cipher.size()) {
+            status = CryptoStatus::BufferTooSmall;
+            goto cleanup_encrypt;
+        }
         memcpy(output.data, cipher.data(), cipher.size());
-        return CryptoStatus::Success;
+
+    cleanup_encrypt:
+        mpz_clear(blockIn);
+        mpz_clear(blockOut);
+        clear_mpz_array(subkeys, 16);
+        return status;
     }
 
     CryptoStatus decrypt(ConstBuffer input, ConstBuffer key, MutBuffer output) {
         if (input.size < 24) return CryptoStatus::InvalidParam;
         if (memcmp(input.data, MAGIC, 4) != 0) return CryptoStatus::InvalidParam;
 
+        CryptoStatus status = CryptoStatus::Success;
         vector<uint8_t> pwd(key.data, key.data + key.size);
         vector<uint8_t> salt(input.data + 8, input.data + 8 + SALT_SIZE);
         vector<uint8_t> iv(input.data + 8 + SALT_SIZE, input.data + 8 + SALT_SIZE + IV_SIZE);
         vector<uint8_t> cipher(input.data + 24, input.data + input.size);
 
         vector<uint8_t> derived = deriveKey(pwd, salt, DES_KEY_SIZE);
-        array<uint64_t, 16> subkeys = buildSubKeys(derived);
-        array<uint64_t, 16> rev_subkeys{};
-        for (size_t i = 0; i < 16; ++i) rev_subkeys[i] = subkeys[15 - i];
+        mpz_t subkeys[16];
+        mpz_t rev_subkeys[16];
+        init_mpz_array(subkeys, 16);
+        init_mpz_array(rev_subkeys, 16);
+        buildSubKeys(derived, subkeys);
+        for (size_t i = 0; i < 16; ++i) {
+            mpz_set(rev_subkeys[i], subkeys[15 - i]);
+        }
 
         vector<uint8_t> plain;
         array<uint8_t, DES_BLOCK_SIZE> prev{};
         memcpy(prev.data(), iv.data(), IV_SIZE);
 
-        for (size_t pos = 0; pos < cipher.size(); pos += DES_BLOCK_SIZE) {
+        mpz_t blockIn, blockOut;
+        mpz_init(blockIn);
+        mpz_init(blockOut);
+
+        for (size_t pos = 0; pos + DES_BLOCK_SIZE <= cipher.size(); pos += DES_BLOCK_SIZE) {
             array<uint8_t, DES_BLOCK_SIZE> block{}, cipherBlock{};
             memcpy(block.data(), cipher.data() + pos, DES_BLOCK_SIZE);
             memcpy(cipherBlock.data(), cipher.data() + pos, DES_BLOCK_SIZE);
 
-            uint64_t b64 = processBlock(bytesToU64(block.data()), rev_subkeys);
-            u64ToBytes(b64, block.data());
+            bytesToMpz(blockIn, block.data(), DES_BLOCK_SIZE);
+            processBlock(blockOut, blockIn, rev_subkeys);
+            mpzToBytes(blockOut, block.data(), DES_BLOCK_SIZE);
 
-            for (size_t i = 0; i < DES_BLOCK_SIZE; ++i) block[i] ^= prev[i];
+            for (size_t i = 0; i < DES_BLOCK_SIZE; ++i) {
+                block[i] = static_cast<uint8_t>(block[i] ^ prev[i]);
+            }
             plain.insert(plain.end(), block.begin(), block.end());
             prev = cipherBlock;
         }
 
+        if (plain.empty()) {
+            status = CryptoStatus::InvalidParam;
+            goto cleanup_decrypt;
+        }
+
         uint8_t pad = plain.back();
-        if (pad == 0 || pad > DES_BLOCK_SIZE || pad > plain.size()) return CryptoStatus::InvalidParam;
+        if (pad == 0 || pad > DES_BLOCK_SIZE || pad > plain.size()) {
+            status = CryptoStatus::InvalidParam;
+            goto cleanup_decrypt;
+        }
         plain.resize(plain.size() - pad);
 
-        if (output.size < plain.size()) return CryptoStatus::BufferTooSmall;
+        if (output.size < plain.size()) {
+            status = CryptoStatus::BufferTooSmall;
+            goto cleanup_decrypt;
+        }
         memcpy(output.data, plain.data(), plain.size());
-        return CryptoStatus::Success;
+
+    cleanup_decrypt:
+        mpz_clear(blockIn);
+        mpz_clear(blockOut);
+        clear_mpz_array(subkeys, 16);
+        clear_mpz_array(rev_subkeys, 16);
+        return status;
     }
 }
