@@ -16,7 +16,6 @@ include_directories(${CMAKE_CURRENT_SOURCE_DIR}/include)
 
 # === НАСТРОЙКА GMP ДЛЯ WINDOWS (MinGW / MSYS2 ucrt64) ===
 if(WIN32)
-    # Явно указываем CMake, где искать заголовочные файлы и линковать libgmp
     include_directories(C:/msys64/ucrt64/include)
     link_directories(C:/msys64/ucrt64/lib)
 endif()
@@ -45,26 +44,34 @@ add_library(vernam SHARED modules/vernam/vernam_module.cpp)
 
 # Модуль Тритемиуса
 add_library(trithemius SHARED modules/trithemius/trithemius_module.cpp)
+target_link_libraries(trithemius gmp)
 
-# Модуль Blowfish (требует OpenSSL)
+# Модуль Blowfish
 add_library(blowfish SHARED modules/blowfish/blowfish_module.cpp)
 target_link_libraries(blowfish crypto)
 
 # === СБОРКА ОСНОВНОГО ПРИЛОЖЕНИЯ ===
-add_executable(crypto_app src/main.cpp src/module_manager.cpp src/ui_utils.cpp)
+add_executable(crypto_app
+    src/main.cpp
+    src/module_manager.cpp
+    src/ui_utils.cpp
+)
 
 if(WIN32)
-    # В Windows функции динамической загрузки (LoadLibrary) встроены по умолчанию
+    # В Windows LoadLibrary встроен в систему
 else()
-    target_link_libraries(crypto_app ${CMAKE_DL_LIBS}) # Для Linux подключаем dlfcn
+    target_link_libraries(crypto_app ${CMAKE_DL_LIBS})
 endif()
 
-
-# === МАКРОС АВТОМАТИЧЕСКОГО КОПИРОВАНИЯ В ПАПКУ BUILD ===
+# === АВТОМАТИЧЕСКОЕ КОПИРОВАНИЕ ПЛАГИНОВ В BUILD ===
 macro(copy_plugin_target TARGET_NAME DIR_NAME)
     add_custom_command(TARGET ${TARGET_NAME} POST_BUILD
-        COMMAND ${CMAKE_COMMAND} -E make_directory ${CMAKE_BINARY_DIR}/plugins/${DIR_NAME}
-        COMMAND ${CMAKE_COMMAND} -E copy $<TARGET_FILE:${TARGET_NAME}> ${CMAKE_BINARY_DIR}/plugins/${DIR_NAME}/lib${TARGET_NAME}${LIB_EXT}
+        COMMAND ${CMAKE_COMMAND} -E make_directory
+            ${CMAKE_BINARY_DIR}/plugins/${DIR_NAME}
+
+        COMMAND ${CMAKE_COMMAND} -E copy
+            $<TARGET_FILE:${TARGET_NAME}>
+            ${CMAKE_BINARY_DIR}/plugins/${DIR_NAME}/lib${TARGET_NAME}${LIB_EXT}
     )
 endmacro()
 
