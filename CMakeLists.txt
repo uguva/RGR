@@ -35,7 +35,7 @@ add_library(aes SHARED modules/aes/aes_module.cpp)
 
 # Модуль DES
 add_library(des SHARED modules/des/des_module.cpp)
-
+target_link_libraries(des gmp)
 # Модуль Аффинного шифра
 add_library(affine SHARED modules/affine/affine_module.cpp)
 target_link_libraries(affine gmp)
