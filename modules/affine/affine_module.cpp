@@ -4,6 +4,7 @@
 #include <cstdlib>
 #include <ctime>
 #include <cstring>
+#include <gmp.h>
 
 using namespace std;
 
@@ -31,6 +32,7 @@ namespace {
 }
 
 extern "C" {
+
     const AlgorithmInfo* get_algorithm_info() {
         static const AlgorithmInfo info = { "Affine", 2 };
         return &info;
@@ -38,24 +40,22 @@ extern "C" {
 
     CryptoStatus get_output_size(size_t input_size, size_t* out_size, bool is_encrypt) {
         if (!out_size) return CryptoStatus::InvalidParam;
-        *out_size = input_size; // Размер не меняется
+        *out_size = input_size;
         return CryptoStatus::Success;
     }
 
     CryptoStatus generate_keys(const char* params, char* out_buffer, size_t max_size, size_t* written) {
         srand(static_cast<unsigned>(time(nullptr)));
-        
-        // Multiplier (A) должен быть взаимно прост с 256 (т.е. быть нечетным числом)
+
         int a;
         do {
             a = (rand() % 255) + 1;
         } while (greatest_common_divisor(a, 256) != 1);
-        
-        // Shift (B) - любое число от 0 до 255
+
         int b = rand() % 256;
 
         string res = to_string(a) + " " + to_string(b);
-        
+
         if (res.size() >= max_size) return CryptoStatus::BufferTooSmall;
         strcpy(out_buffer, res.c_str());
         *written = res.size();
@@ -64,33 +64,68 @@ extern "C" {
 
     CryptoStatus encrypt(ConstBuffer input, ConstBuffer key, MutBuffer output) {
         string k(reinterpret_cast<const char*>(key.data), key.size);
-        int a = 0, b = 0;
-        
-        if (sscanf(k.c_str(), "%d %d", &a, &b) != 2) return CryptoStatus::InvalidParam;
-        if (greatest_common_divisor(a, 256) != 1) return CryptoStatus::InvalidParam;
-        if (output.size < input.size) return CryptoStatus::BufferTooSmall;
+
+        mpz_t a, b, p, c, mod;
+        mpz_init(a);
+        mpz_init(b);
+        mpz_init(p);
+        mpz_init(c);
+        mpz_init_set_ui(mod, 256);
+
+        if (mpz_set_str(a, k.c_str(), 10) != 0) {
+            mpz_clear(a); mpz_clear(b); mpz_clear(p); mpz_clear(c); mpz_clear(mod);
+            return CryptoStatus::InvalidParam;
+        }
+
+        size_t space_pos = k.find(' ');
+        if (space_pos == string::npos) {
+            mpz_clear(a); mpz_clear(b); mpz_clear(p); mpz_clear(c); mpz_clear(mod);
+            return CryptoStatus::InvalidParam;
+        }
+
+        string b_str = k.substr(space_pos + 1);
+        if (mpz_set_str(b, b_str.c_str(), 10) != 0) {
+            mpz_clear(a); mpz_clear(b); mpz_clear(p); mpz_clear(c); mpz_clear(mod);
+            return CryptoStatus::InvalidParam;
+        }
+
+        if (greatest_common_divisor(mpz_get_ui(a), 256) != 1) {
+            mpz_clear(a); mpz_clear(b); mpz_clear(p); mpz_clear(c); mpz_clear(mod);
+            return CryptoStatus::InvalidParam;
+        }
+
+        if (output.size < input.size) {
+            mpz_clear(a); mpz_clear(b); mpz_clear(p); mpz_clear(c); mpz_clear(mod);
+            return CryptoStatus::BufferTooSmall;
+        }
 
         for (size_t i = 0; i < input.size; i++) {
-            output.data[i] = static_cast<uint8_t>((a * input.data[i] + b) % 256);
+            mpz_set_ui(p, input.data[i]);
+            mpz_mul(c, a, p);
+            mpz_add(c, c, b);
+            mpz_mod(c, c, mod);
+            output.data[i] = static_cast<uint8_t>(mpz_get_ui(c));
         }
+
+        mpz_clear(a); mpz_clear(b); mpz_clear(p); mpz_clear(c); mpz_clear(mod);
         return CryptoStatus::Success;
     }
 
     CryptoStatus decrypt(ConstBuffer input, ConstBuffer key, MutBuffer output) {
         string k(reinterpret_cast<const char*>(key.data), key.size);
-        int a = 0, b = 0;
-        
-        if (sscanf(k.c_str(), "%d %d", &a, &b) != 2) return CryptoStatus::InvalidParam;
-        
-        int a_inv = modular_inverse_256(a);
-        if (a_inv == -1) return CryptoStatus::InvalidParam;
-        if (output.size < input.size) return CryptoStatus::BufferTooSmall;
 
-        for (size_t i = 0; i < input.size; i++) {
-            int encrypted_byte = input.data[i];
-            int decrypted_byte = (a_inv * ((encrypted_byte - b + 256) % 256)) % 256;
-            output.data[i] = static_cast<uint8_t>(decrypted_byte);
+        mpz_t a, b, a_inv, c, p, mod;
+        mpz_init(a);
+        mpz_init(b);
+        mpz_init(a_inv);
+        mpz_init(c);
+        mpz_init(p);
+        mpz_init_set_ui(mod, 256);
+
+        if (mpz_set_str(a, k.c_str(), 10) != 0) {
+            mpz_clear(a); mpz_clear(b); mpz_clear(a_inv); mpz_clear(c); mpz_clear(p); mpz_clear(mod);
+            return CryptoStatus::InvalidParam;
         }
-        return CryptoStatus::Success;
-    }
-}
+
+        size_t space_pos = k.find(' ');
+        if (space_pos == string::npos) {
