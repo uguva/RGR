@@ -49,7 +49,7 @@ target_link_libraries(trithemius gmp)
 
 # Модуль Blowfish
 add_library(blowfish SHARED modules/blowfish/blowfish_module.cpp)
-target_link_libraries(blowfish crypto)
+target_link_libraries(blowfish gmp)
 
 # === СБОРКА ОСНОВНОГО ПРИЛОЖЕНИЯ ===
 add_executable(crypto_app
