@@ -8,7 +8,7 @@
 using namespace std;
 
 namespace {
-    // Вспомогательные математические функции из кода одногруппника
+
     int greatest_common_divisor(int first, int second) {
         first = first < 0 ? -first : first;
         second = second < 0 ? -second : second;
