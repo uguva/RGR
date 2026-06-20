@@ -8,7 +8,6 @@
 
 using namespace std;
 
-// === Математика AES (взята из кода одногруппников) ===
 namespace {
     constexpr size_t AES_BLOCK_SIZE = 16;
     constexpr size_t AES_KEY_SIZE = 16;
