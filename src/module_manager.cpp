@@ -13,7 +13,6 @@ using std::string;
 using std::runtime_error;
 using std::to_string;
 
-// map вызовет деструкторы LoadedModule
 ModuleManager::~ModuleManager() {
     unload_all();
 }
@@ -34,7 +33,6 @@ bool ModuleManager::load_module(const string& path) {
         throw runtime_error("Не удалось загрузить библиотеку " + path + ". " + error_msg);
     }
 
-    // лямбда-помощник получения адреса символа
     auto get_sym = [handle](const char* sym_name) -> void* {
 #ifdef _WIN32
         return reinterpret_cast<void*>(GetProcAddress(static_cast<HMODULE>(handle), sym_name));
@@ -49,7 +47,6 @@ bool ModuleManager::load_module(const string& path) {
     crypt_t decrypt_f = reinterpret_cast<crypt_t>(get_sym("decrypt"));
     gen_keys_t gen_keys = reinterpret_cast<gen_keys_t>(get_sym("generate_keys"));
 
-    // Если функции ABI не найдены, освобождаем handle до генерации throw
     if (!get_info || !get_size || !encrypt_f || !decrypt_f || !gen_keys) {
 #ifdef _WIN32
         FreeLibrary(static_cast<HMODULE>(handle));
@@ -59,7 +56,6 @@ bool ModuleManager::load_module(const string& path) {
         throw runtime_error("Ошибка загрузки функций C ABI из: " + path);
     }
 
-    // Безопасный вызов get_info() плагина с перехватом системных исключений
     string module_name;
     try {
         const AlgorithmInfo* info = get_info();
@@ -76,7 +72,6 @@ bool ModuleManager::load_module(const string& path) {
         throw runtime_error("Критический сбой (Crash) при чтении метаданных get_algorithm_info из: " + path);
     }
 
-    // объект модуля
     LoadedModule mod;
     mod.handle = handle;
     mod.name = module_name;
@@ -86,15 +81,12 @@ bool ModuleManager::load_module(const string& path) {
     mod.decrypt_func = decrypt_f;
     mod.generate_keys = gen_keys;
 
-    // Перемещение (std::move) вместо копирования
-    // Старый временный дескриптор в 'mod' занулится и не выгрузит DLL досрочно
     modules[mod.name] = std::move(mod);
     
     return true;
 }
 
 void ModuleManager::unload_all() {
-    // Очистка мапы вызовет деструкторы у всех LoadedModule
     modules.clear();
 }
 
